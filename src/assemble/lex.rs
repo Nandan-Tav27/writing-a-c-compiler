@@ -12,6 +12,9 @@ pub enum Token {
     OpenBrace,
     CloseBrace,
     Semicolon,
+    Complement,
+    Negation,
+    Decrement,
 }
 
 pub fn lex(file_path: &Path) -> anyhow::Result<Vec<Token>> {
@@ -60,6 +63,19 @@ pub fn lex(file_path: &Path) -> anyhow::Result<Vec<Token>> {
                 }
                 let value = val.into_iter().collect::<String>().parse::<u64>()?;
                 tokens.push(Token::Constant(value));
+            }
+            '-' => {
+                chars.next();
+                if chars.peek() == Some(&'-') {
+                    tokens.push(Token::Decrement);
+                    chars.next();
+                } else {
+                    tokens.push(Token::Negation);
+                }
+            }
+            '~' => {
+                tokens.push(Token::Complement);
+                chars.next();
             }
             '(' => {
                 tokens.push(Token::OpenParen);

@@ -7,13 +7,7 @@ pub struct Program {
 impl Program {
     pub fn print_program(&self) {
         println!("Program(");
-        println!("\tFunction(");
-        println!("\t\tname=\"{}\"", self.function_def.name);
-        println!("\t\tbody=Return(");
-        let Statement::Return(Expression::Constant(constant)) = self.function_def.body;
-        println!("\t\t\tConstant({})", constant);
-        println!("\t\t)");
-        println!("\t)");
+        self.function_def.print_function_def(2);
         println!(")");
     }
 }
@@ -23,13 +17,85 @@ pub struct FunctionDef {
     pub body: Statement,
 }
 
+impl FunctionDef {
+    fn print_function_def(&self, indent: usize) {
+        for _ in 0..indent {
+            print!(" ");
+        }
+        println!("Function(");
+        for _ in 0..(indent + 2) {
+            print!(" ");
+        }
+        println!("name=\"{}\",", self.name);
+        for _ in 0..(indent + 2) {
+            print!(" ");
+        }
+        print!("body=");
+        self.body.print_statement(indent + 2);
+        for _ in 0..indent {
+            print!(" ");
+        }
+        println!(")");
+    }
+}
+
 pub enum Statement {
     Return(Expression),
 }
 
+impl Statement {
+    fn print_statement(&self, indent: usize) {
+        println!("Return(");
+        match self {
+            Self::Return(exp) => exp.print_expression(indent + 2),
+        }
+        for _ in 0..indent {
+            print!(" ");
+        }
+        println!(")");
+    }
+}
+
 pub enum Expression {
     Constant(u64),
+    Unary(UnaryOp, Box<Expression>),
 }
+
+impl Expression {
+    fn print_expression(&self, indent: usize) {
+        for _ in 0..indent {
+            print!(" ");
+        }
+        match self {
+            Self::Constant(val) => println!("Constant({})", val),
+            Self::Unary(op, exp) => {
+                print!("Unary(");
+                op.print_unary_op();
+                println!(", Expression(");
+                exp.print_expression(indent + 2);
+                for _ in 0..indent {
+                    print!(" ");
+                }
+                println!(")");
+            }
+        }
+    }
+}
+
+pub enum UnaryOp {
+    Complement,
+    Negation,
+}
+
+impl UnaryOp {
+    fn print_unary_op(&self) {
+        match self {
+            Self::Complement => print!("~"),
+            Self::Negation => print!("-"),
+        }
+    }
+}
+
 struct Parser<'a> {
     tokens: &'a [Token],
     pos: usize,
@@ -93,10 +159,31 @@ impl<'a> Parser<'a> {
     fn parse_expression(&mut self) -> anyhow::Result<Expression> {
         match self.next() {
             Some(Token::Constant(val)) => Ok(Expression::Constant(*val)),
+            Some(tok @ (Token::Complement | Token::Negation)) => {
+                let op = Self::parse_unary_op(tok)?;
+                let exp = self.parse_expression()?;
+                Ok(Expression::Unary(op, Box::new(exp)))
+            }
+            Some(Token::OpenParen) => {
+                let exp = self.parse_expression()?;
+                self.expect(Token::CloseParen, "Invalid expression")?;
+                Ok(exp)
+            }
             Some(other) => {
-                anyhow::bail!("Invalid expression: expected a constant, found {:?}", other)
+                anyhow::bail!(
+                    "Invalid expression: expected a constant or unary op, found {:?}",
+                    other
+                )
             }
             None => anyhow::bail!("Invalid expression: expected expression, found end of input"),
+        }
+    }
+
+    fn parse_unary_op(tok: &Token) -> anyhow::Result<UnaryOp> {
+        match tok {
+            Token::Complement => Ok(UnaryOp::Complement),
+            Token::Negation => Ok(UnaryOp::Negation),
+            _ => anyhow::bail!("Invalid unary operator"),
         }
     }
 

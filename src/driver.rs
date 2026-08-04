@@ -6,11 +6,13 @@ use std::{
 
 use anyhow::Context;
 
-use crate::assemble::{assembler, emit, lex, parse};
+use crate::assemble::{assembler, emit, lex, parse, tacky};
 
+#[derive(Debug, PartialEq)]
 pub enum Stage {
     Lex,
     Parse,
+    Tacky,
     Codegen,
     Full,
 }
@@ -45,23 +47,47 @@ pub fn preprocess(file_path: &Path) -> anyhow::Result<PathBuf> {
 }
 
 pub fn assemble(file_path: PathBuf, stage: Stage) -> anyhow::Result<Option<PathBuf>> {
-    //TODO: Check cli flags for stage
     let assembled_file_path = file_path.with_extension("s");
 
     // lex
     let tokens: Vec<lex::Token> = lex::lex(&file_path)?;
-    for token in tokens.iter() {
+    for token in &tokens {
         println!("{:?}\n", token);
+    }
+
+    if stage == Stage::Lex {
+        fs::remove_file(file_path)?;
+        return Ok(None);
     }
 
     // parse
     let program = parse::parse(&tokens)?;
     program.print_program();
 
-    // assmeble
-    let program = assembler::assemble(program);
+    if stage == Stage::Parse {
+        fs::remove_file(file_path)?;
+        return Ok(None);
+    }
 
-    emit::emit(&assembled_file_path, program)?;
+    // transform to TACKY
+    let tacky = tacky::transform(program);
+    tacky.print_program();
+
+    if stage == Stage::Tacky {
+        fs::remove_file(file_path)?;
+        return Ok(None);
+    }
+
+    // codegen
+    let asm_ast = assembler::assemble(tacky);
+
+    if stage == Stage::Codegen {
+        fs::remove_file(file_path)?;
+        return Ok(None);
+    }
+
+    // emit
+    emit::emit(&assembled_file_path, asm_ast)?;
 
     fs::remove_file(file_path)?;
 
