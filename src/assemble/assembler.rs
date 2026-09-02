@@ -14,6 +14,9 @@ pub struct FunctionDef {
 pub enum Instruction {
     Mov { source: Operand, dest: Operand },
     Unary(UnaryOp, Operand),
+    Binary(BinaryOp, Operand, Operand),
+    Idiv(Operand),
+    Cdq,
     AllocateStack(u64),
     Ret,
 }
@@ -30,6 +33,17 @@ impl From<tacky::UnaryOp> for UnaryOp {
             tacky::UnaryOp::Negation => UnaryOp::Neg,
         }
     }
+}
+
+pub enum BinaryOp {
+    Add,
+    Sub,
+    Mult,
+    Sal,
+    Sar,
+    And,
+    Xor,
+    Or,
 }
 
 #[derive(Clone)]
@@ -52,7 +66,10 @@ impl From<tacky::Value> for Operand {
 #[derive(Clone)]
 pub enum Reg {
     AX,
+    DX,
     R10,
+    R11,
+    CL,
 }
 
 pub fn assemble(program: tacky::Program) -> Program {
@@ -99,6 +116,101 @@ fn lower_instruction(instr: tacky::Instruction, instrs: &mut Vec<Instruction>) {
             });
             instrs.push(Instruction::Unary(unary_operator.into(), dest));
         }
+        tacky::Instruction::Binary {
+            binary_operator,
+            src1,
+            src2,
+            dest,
+        } => match binary_operator {
+            tacky::BinaryOp::Add => {
+                let dest: Operand = dest.into();
+                instrs.push(Instruction::Mov {
+                    source: src1.into(),
+                    dest: dest.clone(),
+                });
+                instrs.push(Instruction::Binary(BinaryOp::Add, src2.into(), dest));
+            }
+            tacky::BinaryOp::Subtract => {
+                let dest: Operand = dest.into();
+                instrs.push(Instruction::Mov {
+                    source: src1.into(),
+                    dest: dest.clone(),
+                });
+                instrs.push(Instruction::Binary(BinaryOp::Sub, src2.into(), dest));
+            }
+            tacky::BinaryOp::Multiply => {
+                let dest: Operand = dest.into();
+                instrs.push(Instruction::Mov {
+                    source: src1.into(),
+                    dest: dest.clone(),
+                });
+                instrs.push(Instruction::Binary(BinaryOp::Mult, src2.into(), dest));
+            }
+            tacky::BinaryOp::Divide => {
+                instrs.push(Instruction::Mov {
+                    source: src1.into(),
+                    dest: Operand::Register(Reg::AX),
+                });
+                instrs.push(Instruction::Cdq);
+                instrs.push(Instruction::Idiv(src2.into()));
+                instrs.push(Instruction::Mov {
+                    source: Operand::Register(Reg::AX),
+                    dest: dest.into(),
+                });
+            }
+            tacky::BinaryOp::Remainder => {
+                instrs.push(Instruction::Mov {
+                    source: src1.into(),
+                    dest: Operand::Register(Reg::AX),
+                });
+                instrs.push(Instruction::Cdq);
+                instrs.push(Instruction::Idiv(src2.into()));
+                instrs.push(Instruction::Mov {
+                    source: Operand::Register(Reg::DX),
+                    dest: dest.into(),
+                });
+            }
+            tacky::BinaryOp::LeftShift => {
+                let dest: Operand = dest.into();
+                instrs.push(Instruction::Mov {
+                    source: src1.into(),
+                    dest: dest.clone(),
+                });
+                instrs.push(Instruction::Binary(BinaryOp::Sal, src2.into(), dest));
+            }
+            tacky::BinaryOp::RightShift => {
+                let dest: Operand = dest.into();
+                instrs.push(Instruction::Mov {
+                    source: src1.into(),
+                    dest: dest.clone(),
+                });
+                instrs.push(Instruction::Binary(BinaryOp::Sar, src2.into(), dest));
+            }
+            tacky::BinaryOp::BitwiseAND => {
+                let dest: Operand = dest.into();
+                instrs.push(Instruction::Mov {
+                    source: src1.into(),
+                    dest: dest.clone(),
+                });
+                instrs.push(Instruction::Binary(BinaryOp::And, src2.into(), dest));
+            }
+            tacky::BinaryOp::BitwiseXOR => {
+                let dest: Operand = dest.into();
+                instrs.push(Instruction::Mov {
+                    source: src1.into(),
+                    dest: dest.clone(),
+                });
+                instrs.push(Instruction::Binary(BinaryOp::Xor, src2.into(), dest));
+            }
+            tacky::BinaryOp::BitwiseOR => {
+                let dest: Operand = dest.into();
+                instrs.push(Instruction::Mov {
+                    source: src1.into(),
+                    dest: dest.clone(),
+                });
+                instrs.push(Instruction::Binary(BinaryOp::Or, src2.into(), dest));
+            }
+        },
     }
 }
 
@@ -113,6 +225,13 @@ fn replace_pseudo(program: &mut Program) -> i64 {
                 replace_pseudo_with_stack(dest, &mut pseudo_offset_map, &mut offset);
             }
             Instruction::Unary(_, operand) => {
+                replace_pseudo_with_stack(operand, &mut pseudo_offset_map, &mut offset);
+            }
+            Instruction::Binary(_, operand_1, operand_2) => {
+                replace_pseudo_with_stack(operand_1, &mut pseudo_offset_map, &mut offset);
+                replace_pseudo_with_stack(operand_2, &mut pseudo_offset_map, &mut offset);
+            }
+            Instruction::Idiv(operand) => {
                 replace_pseudo_with_stack(operand, &mut pseudo_offset_map, &mut offset);
             }
             _ => {}
@@ -155,6 +274,120 @@ fn allocate_stack_and_temp_reg(program: Program, offset: i64) -> Program {
                     source: Operand::Register(Reg::R10),
                     dest: Operand::Stack(d),
                 };
+                updated_instructions.push(instr1);
+                updated_instructions.push(instr2);
+            }
+            Instruction::Idiv(Operand::Imm(val)) => {
+                let instr1 = Instruction::Mov {
+                    source: Operand::Imm(val),
+                    dest: Operand::Register(Reg::R10),
+                };
+                let instr2 = Instruction::Idiv(Operand::Register(Reg::R10));
+                updated_instructions.push(instr1);
+                updated_instructions.push(instr2);
+            }
+            Instruction::Binary(BinaryOp::Add, Operand::Stack(o1), Operand::Stack(o2)) => {
+                let instr1 = Instruction::Mov {
+                    source: Operand::Stack(o1),
+                    dest: Operand::Register(Reg::R10),
+                };
+                let instr2 = Instruction::Binary(
+                    BinaryOp::Add,
+                    Operand::Register(Reg::R10),
+                    Operand::Stack(o2),
+                );
+                updated_instructions.push(instr1);
+                updated_instructions.push(instr2);
+            }
+            Instruction::Binary(BinaryOp::Sub, Operand::Stack(o1), Operand::Stack(o2)) => {
+                let instr1 = Instruction::Mov {
+                    source: Operand::Stack(o1),
+                    dest: Operand::Register(Reg::R10),
+                };
+                let instr2 = Instruction::Binary(
+                    BinaryOp::Sub,
+                    Operand::Register(Reg::R10),
+                    Operand::Stack(o2),
+                );
+                updated_instructions.push(instr1);
+                updated_instructions.push(instr2);
+            }
+            Instruction::Binary(BinaryOp::Mult, o1, Operand::Stack(o2)) => {
+                let instr1 = Instruction::Mov {
+                    source: Operand::Stack(o2),
+                    dest: Operand::Register(Reg::R11),
+                };
+                let instr2 = Instruction::Binary(BinaryOp::Mult, o1, Operand::Register(Reg::R11));
+                let instr3 = Instruction::Mov {
+                    source: Operand::Register(Reg::R11),
+                    dest: Operand::Stack(o2),
+                };
+                updated_instructions.push(instr1);
+                updated_instructions.push(instr2);
+                updated_instructions.push(instr3);
+            }
+            Instruction::Binary(BinaryOp::Sal, Operand::Stack(o1), Operand::Stack(o2)) => {
+                let instr1 = Instruction::Mov {
+                    source: Operand::Stack(o1),
+                    dest: Operand::Register(Reg::CL),
+                };
+                let instr2 = Instruction::Binary(
+                    BinaryOp::Sal,
+                    Operand::Register(Reg::CL),
+                    Operand::Stack(o2),
+                );
+                updated_instructions.push(instr1);
+                updated_instructions.push(instr2);
+            }
+            Instruction::Binary(BinaryOp::Sar, Operand::Stack(o1), Operand::Stack(o2)) => {
+                let instr1 = Instruction::Mov {
+                    source: Operand::Stack(o1),
+                    dest: Operand::Register(Reg::CL),
+                };
+                let instr2 = Instruction::Binary(
+                    BinaryOp::Sar,
+                    Operand::Register(Reg::CL),
+                    Operand::Stack(o2),
+                );
+                updated_instructions.push(instr1);
+                updated_instructions.push(instr2);
+            }
+            Instruction::Binary(BinaryOp::And, Operand::Stack(o1), Operand::Stack(o2)) => {
+                let instr1 = Instruction::Mov {
+                    source: Operand::Stack(o1),
+                    dest: Operand::Register(Reg::R10),
+                };
+                let instr2 = Instruction::Binary(
+                    BinaryOp::And,
+                    Operand::Register(Reg::R10),
+                    Operand::Stack(o2),
+                );
+                updated_instructions.push(instr1);
+                updated_instructions.push(instr2);
+            }
+            Instruction::Binary(BinaryOp::Xor, Operand::Stack(o1), Operand::Stack(o2)) => {
+                let instr1 = Instruction::Mov {
+                    source: Operand::Stack(o1),
+                    dest: Operand::Register(Reg::R10),
+                };
+                let instr2 = Instruction::Binary(
+                    BinaryOp::Xor,
+                    Operand::Register(Reg::R10),
+                    Operand::Stack(o2),
+                );
+                updated_instructions.push(instr1);
+                updated_instructions.push(instr2);
+            }
+            Instruction::Binary(BinaryOp::Or, Operand::Stack(o1), Operand::Stack(o2)) => {
+                let instr1 = Instruction::Mov {
+                    source: Operand::Stack(o1),
+                    dest: Operand::Register(Reg::R10),
+                };
+                let instr2 = Instruction::Binary(
+                    BinaryOp::Or,
+                    Operand::Register(Reg::R10),
+                    Operand::Stack(o2),
+                );
                 updated_instructions.push(instr1);
                 updated_instructions.push(instr2);
             }

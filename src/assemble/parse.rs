@@ -1,97 +1,57 @@
 use crate::assemble::lex::Token;
 
+#[derive(Debug)]
 pub struct Program {
     pub function_def: FunctionDef,
 }
 
-impl Program {
-    pub fn print_program(&self) {
-        println!("Program(");
-        self.function_def.print_function_def(2);
-        println!(")");
-    }
-}
-
+#[derive(Debug)]
 pub struct FunctionDef {
     pub name: String,
     pub body: Statement,
 }
 
-impl FunctionDef {
-    fn print_function_def(&self, indent: usize) {
-        for _ in 0..indent {
-            print!(" ");
-        }
-        println!("Function(");
-        for _ in 0..(indent + 2) {
-            print!(" ");
-        }
-        println!("name=\"{}\",", self.name);
-        for _ in 0..(indent + 2) {
-            print!(" ");
-        }
-        print!("body=");
-        self.body.print_statement(indent + 2);
-        for _ in 0..indent {
-            print!(" ");
-        }
-        println!(")");
-    }
-}
-
+#[derive(Debug)]
 pub enum Statement {
     Return(Expression),
 }
 
-impl Statement {
-    fn print_statement(&self, indent: usize) {
-        println!("Return(");
-        match self {
-            Self::Return(exp) => exp.print_expression(indent + 2),
-        }
-        for _ in 0..indent {
-            print!(" ");
-        }
-        println!(")");
-    }
-}
-
+#[derive(Debug)]
 pub enum Expression {
     Constant(u64),
     Unary(UnaryOp, Box<Expression>),
+    Binary(BinaryOp, Box<Expression>, Box<Expression>),
 }
 
-impl Expression {
-    fn print_expression(&self, indent: usize) {
-        for _ in 0..indent {
-            print!(" ");
-        }
-        match self {
-            Self::Constant(val) => println!("Constant({})", val),
-            Self::Unary(op, exp) => {
-                print!("Unary(");
-                op.print_unary_op();
-                println!(", Expression(");
-                exp.print_expression(indent + 2);
-                for _ in 0..indent {
-                    print!(" ");
-                }
-                println!(")");
-            }
-        }
-    }
-}
-
+#[derive(Debug)]
 pub enum UnaryOp {
     Complement,
     Negation,
 }
 
-impl UnaryOp {
-    fn print_unary_op(&self) {
+#[derive(Debug)]
+pub enum BinaryOp {
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+    Remainder,
+    LeftShift,
+    RightShift,
+    BitwiseAND,
+    BitwiseXOR,
+    BitwiseOR,
+}
+
+impl BinaryOp {
+    fn precedence(&self) -> u8 {
         match self {
-            Self::Complement => print!("~"),
-            Self::Negation => print!("-"),
+            BinaryOp::BitwiseOR => 25,
+            BinaryOp::BitwiseXOR => 30,
+            BinaryOp::BitwiseAND => 35,
+            BinaryOp::LeftShift | BinaryOp::RightShift => 40,
+            BinaryOp::Add | BinaryOp::Subtract => 45,
+            BinaryOp::Multiply | BinaryOp::Divide | BinaryOp::Remainder => 50,
         }
     }
 }
@@ -150,22 +110,37 @@ impl<'a> Parser<'a> {
 
     fn parse_statement(&mut self) -> anyhow::Result<Statement> {
         self.expect(Token::Return, "Invalid statement")?;
-        let exp = self.parse_expression()?;
+        let exp = self.parse_expression(0)?;
         self.expect(Token::Semicolon, "Invalid statement")?;
 
         Ok(Statement::Return(exp))
     }
 
-    fn parse_expression(&mut self) -> anyhow::Result<Expression> {
+    fn parse_expression(&mut self, min_prec: u8) -> anyhow::Result<Expression> {
+        let mut left = self.parse_factor()?;
+        while let Some(tok) = self.peek() {
+            match Self::parse_binary_op(tok) {
+                Ok(op) if op.precedence() >= min_prec => {
+                    self.next();
+                    let right = self.parse_expression(op.precedence() + 1)?;
+                    left = Expression::Binary(op, Box::new(left), Box::new(right));
+                }
+                _ => break,
+            }
+        }
+        Ok(left)
+    }
+
+    fn parse_factor(&mut self) -> anyhow::Result<Expression> {
         match self.next() {
             Some(Token::Constant(val)) => Ok(Expression::Constant(*val)),
             Some(tok @ (Token::Complement | Token::Negation)) => {
                 let op = Self::parse_unary_op(tok)?;
-                let exp = self.parse_expression()?;
+                let exp = self.parse_factor()?;
                 Ok(Expression::Unary(op, Box::new(exp)))
             }
             Some(Token::OpenParen) => {
-                let exp = self.parse_expression()?;
+                let exp = self.parse_expression(0)?;
                 self.expect(Token::CloseParen, "Invalid expression")?;
                 Ok(exp)
             }
@@ -184,6 +159,22 @@ impl<'a> Parser<'a> {
             Token::Complement => Ok(UnaryOp::Complement),
             Token::Negation => Ok(UnaryOp::Negation),
             _ => anyhow::bail!("Invalid unary operator"),
+        }
+    }
+
+    fn parse_binary_op(tok: &Token) -> anyhow::Result<BinaryOp> {
+        match tok {
+            Token::Addition => Ok(BinaryOp::Add),
+            Token::Negation => Ok(BinaryOp::Subtract),
+            Token::Multiplication => Ok(BinaryOp::Multiply),
+            Token::Division => Ok(BinaryOp::Divide),
+            Token::Remainder => Ok(BinaryOp::Remainder),
+            Token::LeftShift => Ok(BinaryOp::LeftShift),
+            Token::RightShift => Ok(BinaryOp::RightShift),
+            Token::BitwiseAND => Ok(BinaryOp::BitwiseAND),
+            Token::BitwiseXOR => Ok(BinaryOp::BitwiseXOR),
+            Token::BitwiseOR => Ok(BinaryOp::BitwiseOR),
+            _ => anyhow::bail!("Invalid binary operator"),
         }
     }
 

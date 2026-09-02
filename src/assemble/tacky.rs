@@ -1,47 +1,29 @@
 use crate::assemble::parse;
 
+#[derive(Debug)]
 pub struct Program {
     pub function_def: FunctionDef,
 }
 
-impl Program {
-    pub fn print_program(&self) {
-        println!("\nTACKY:");
-        self.function_def.print_function_def();
-    }
-}
-
+#[derive(Debug)]
 pub struct FunctionDef {
     pub name: String,
     pub body: Vec<Instruction>,
 }
 
-impl FunctionDef {
-    fn print_function_def(&self) {
-        println!("{}:", self.name);
-        for instr in &self.body {
-            match instr {
-                Instruction::Ret(val) => {
-                    println!("Return({:?})", val);
-                }
-                Instruction::Unary {
-                    unary_operator,
-                    src,
-                    dest,
-                } => {
-                    println!("Unary({:?}, {:?}, {:?})", unary_operator, src, dest);
-                }
-            }
-        }
-    }
-}
-
+#[derive(Debug)]
 pub enum Instruction {
     Ret(Value),
     // dest must be Value::Var
     Unary {
         unary_operator: UnaryOp,
         src: Value,
+        dest: Value,
+    },
+    Binary {
+        binary_operator: BinaryOp,
+        src1: Value,
+        src2: Value,
         dest: Value,
     },
 }
@@ -63,6 +45,37 @@ impl From<parse::UnaryOp> for UnaryOp {
         match op {
             parse::UnaryOp::Complement => UnaryOp::Complement,
             parse::UnaryOp::Negation => UnaryOp::Negation,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum BinaryOp {
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+    Remainder,
+    LeftShift,
+    RightShift,
+    BitwiseAND,
+    BitwiseXOR,
+    BitwiseOR,
+}
+
+impl From<parse::BinaryOp> for BinaryOp {
+    fn from(op: parse::BinaryOp) -> BinaryOp {
+        match op {
+            parse::BinaryOp::Add => BinaryOp::Add,
+            parse::BinaryOp::Subtract => BinaryOp::Subtract,
+            parse::BinaryOp::Multiply => BinaryOp::Multiply,
+            parse::BinaryOp::Divide => BinaryOp::Divide,
+            parse::BinaryOp::Remainder => BinaryOp::Remainder,
+            parse::BinaryOp::LeftShift => BinaryOp::LeftShift,
+            parse::BinaryOp::RightShift => BinaryOp::RightShift,
+            parse::BinaryOp::BitwiseAND => BinaryOp::BitwiseAND,
+            parse::BinaryOp::BitwiseXOR => BinaryOp::BitwiseXOR,
+            parse::BinaryOp::BitwiseOR => BinaryOp::BitwiseOR,
         }
     }
 }
@@ -106,6 +119,22 @@ impl TackyTransformer {
                 let instr = Instruction::Unary {
                     unary_operator,
                     src,
+                    dest,
+                };
+                instrs.push(instr);
+                Value::Var(var)
+            }
+            parse::Expression::Binary(op, exp1, exp2) => {
+                let binary_operator: BinaryOp = op.into();
+                let src1 = self.lower_expression(*exp1, instrs);
+                let src2 = self.lower_expression(*exp2, instrs);
+                let var = format!("tmp.{}", self.var_count);
+                let dest = Value::Var(var.clone());
+                self.var_count += 1;
+                let instr = Instruction::Binary {
+                    binary_operator,
+                    src1,
+                    src2,
                     dest,
                 };
                 instrs.push(instr);

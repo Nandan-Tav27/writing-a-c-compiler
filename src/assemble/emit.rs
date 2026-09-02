@@ -38,7 +38,14 @@ fn write_instructions(
     for instruction in instructions {
         match instruction {
             assembler::Instruction::Mov { source, dest } => {
-                write!(contents, "\tmovl ").context(
+                let suffix = if matches!(dest, assembler::Operand::Register(assembler::Reg::CL))
+                    || matches!(source, assembler::Operand::Register(assembler::Reg::CL))
+                {
+                    "b"
+                } else {
+                    "l"
+                };
+                write!(contents, "\tmov{} ", suffix).context(
                     "Assembly generation error: error while writing instruction to file",
                 )?;
                 write_operand(contents, source)?;
@@ -79,6 +86,37 @@ fn write_instructions(
                     "Assembly generation error: error while writing instruction to file",
                 )?;
             }
+            assembler::Instruction::Binary(op, operand1, operand2) => {
+                write!(contents, "\t").context(
+                    "Assembly generation error: error while writing instruction to file",
+                )?;
+                write_binary_op(contents, op)?;
+                write!(contents, " ").context(
+                    "Assembly generation error: error while writing instruction to file",
+                )?;
+                write_operand(contents, operand1)?;
+                write!(contents, ", ").context(
+                    "Assembly generation error: error while writing instruction to file",
+                )?;
+                write_operand(contents, operand2)?;
+                writeln!(contents).context(
+                    "Assembly generation error: error while writing instruction to file",
+                )?;
+            }
+            assembler::Instruction::Idiv(operand) => {
+                write!(contents, "\tidivl ").context(
+                    "Assembly generation error: error while writing instruction to file",
+                )?;
+                write_operand(contents, operand)?;
+                writeln!(contents).context(
+                    "Assembly generation error: error while writing instruction to file",
+                )?;
+            }
+            assembler::Instruction::Cdq => {
+                writeln!(contents, "\tcdq").context(
+                    "Assembly generation error: error while writing instruction to file",
+                )?;
+            }
         }
     }
 
@@ -100,7 +138,13 @@ fn write_register(contents: &mut String, register: assembler::Reg) -> anyhow::Re
     match register {
         assembler::Reg::AX => write!(contents, "%eax")
             .context("Assembly generation error: error while writing register to file"),
+        assembler::Reg::DX => write!(contents, "%edx")
+            .context("Assembly generation error: error while writing register to file"),
         assembler::Reg::R10 => write!(contents, "%r10d")
+            .context("Assembly generation error: error while writing register to file"),
+        assembler::Reg::R11 => write!(contents, "%r11d")
+            .context("Assembly generation error: error while writing register to file"),
+        assembler::Reg::CL => write!(contents, "%cl")
             .context("Assembly generation error: error while writing register to file"),
     }
 }
@@ -110,6 +154,27 @@ fn write_unary_op(contents: &mut String, op: assembler::UnaryOp) -> anyhow::Resu
         assembler::UnaryOp::Not => write!(contents, "notl")
             .context("Assembly generation error: error while writing unary operator to file"),
         assembler::UnaryOp::Neg => write!(contents, "negl")
+            .context("Assembly generation error: error while writing unary operator to file"),
+    }
+}
+
+fn write_binary_op(contents: &mut String, op: assembler::BinaryOp) -> anyhow::Result<()> {
+    match op {
+        assembler::BinaryOp::Add => write!(contents, "addl")
+            .context("Assembly generation error: error while writing unary operator to file"),
+        assembler::BinaryOp::Sub => write!(contents, "subl")
+            .context("Assembly generation error: error while writing unary operator to file"),
+        assembler::BinaryOp::Mult => write!(contents, "imull")
+            .context("Assembly generation error: error while writing unary operator to file"),
+        assembler::BinaryOp::Sal => write!(contents, "sall")
+            .context("Assembly generation error: error while writing unary operator to file"),
+        assembler::BinaryOp::Sar => write!(contents, "sarl")
+            .context("Assembly generation error: error while writing unary operator to file"),
+        assembler::BinaryOp::And => write!(contents, "andl")
+            .context("Assembly generation error: error while writing unary operator to file"),
+        assembler::BinaryOp::Xor => write!(contents, "xorl")
+            .context("Assembly generation error: error while writing unary operator to file"),
+        assembler::BinaryOp::Or => write!(contents, "orl")
             .context("Assembly generation error: error while writing unary operator to file"),
     }
 }

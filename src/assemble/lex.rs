@@ -15,6 +15,15 @@ pub enum Token {
     Complement,
     Negation,
     Decrement,
+    Addition,
+    Multiplication,
+    Division,
+    Remainder,
+    LeftShift,
+    RightShift,
+    BitwiseAND,
+    BitwiseXOR,
+    BitwiseOR,
 }
 
 pub fn lex(file_path: &Path) -> anyhow::Result<Vec<Token>> {
@@ -72,6 +81,48 @@ pub fn lex(file_path: &Path) -> anyhow::Result<Vec<Token>> {
                 } else {
                     tokens.push(Token::Negation);
                 }
+            }
+            '+' => {
+                tokens.push(Token::Addition);
+                chars.next();
+            }
+            '*' => {
+                tokens.push(Token::Multiplication);
+                chars.next();
+            }
+            '/' => {
+                tokens.push(Token::Division);
+                chars.next();
+            }
+            '%' => {
+                tokens.push(Token::Remainder);
+                chars.next();
+            }
+            '<' => {
+                chars.next();
+                if chars.peek() == Some(&'<') {
+                    tokens.push(Token::LeftShift);
+                    chars.next();
+                }
+            }
+            '>' => {
+                chars.next();
+                if chars.peek() == Some(&'>') {
+                    tokens.push(Token::RightShift);
+                    chars.next();
+                }
+            }
+            '&' => {
+                tokens.push(Token::BitwiseAND);
+                chars.next();
+            }
+            '^' => {
+                tokens.push(Token::BitwiseXOR);
+                chars.next();
+            }
+            '|' => {
+                tokens.push(Token::BitwiseOR);
+                chars.next();
             }
             '~' => {
                 tokens.push(Token::Complement);

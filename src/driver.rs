@@ -62,7 +62,7 @@ pub fn assemble(file_path: PathBuf, stage: Stage) -> anyhow::Result<Option<PathB
 
     // parse
     let program = parse::parse(&tokens)?;
-    program.print_program();
+    println!("{:#?}", program);
 
     if stage == Stage::Parse {
         fs::remove_file(file_path)?;
@@ -71,7 +71,7 @@ pub fn assemble(file_path: PathBuf, stage: Stage) -> anyhow::Result<Option<PathB
 
     // transform to TACKY
     let tacky = tacky::transform(program);
-    tacky.print_program();
+    println!("{:#?}", tacky);
 
     if stage == Stage::Tacky {
         fs::remove_file(file_path)?;
