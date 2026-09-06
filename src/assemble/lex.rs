@@ -21,9 +21,18 @@ pub enum Token {
     Remainder,
     LeftShift,
     RightShift,
-    BitwiseAND,
-    BitwiseXOR,
-    BitwiseOR,
+    BitwiseAnd,
+    BitwiseXor,
+    BitwiseOr,
+    Not,
+    And,
+    Or,
+    EqualTo,
+    NotEqualTo,
+    LessThan,
+    GreaterThan,
+    LessThanOrEqualTo,
+    GreaterThanOrEqualTo,
 }
 
 pub fn lex(file_path: &Path) -> anyhow::Result<Vec<Token>> {
@@ -103,6 +112,11 @@ pub fn lex(file_path: &Path) -> anyhow::Result<Vec<Token>> {
                 if chars.peek() == Some(&'<') {
                     tokens.push(Token::LeftShift);
                     chars.next();
+                } else if chars.peek() == Some(&'=') {
+                    tokens.push(Token::LessThanOrEqualTo);
+                    chars.next();
+                } else {
+                    tokens.push(Token::LessThan);
                 }
             }
             '>' => {
@@ -110,23 +124,54 @@ pub fn lex(file_path: &Path) -> anyhow::Result<Vec<Token>> {
                 if chars.peek() == Some(&'>') {
                     tokens.push(Token::RightShift);
                     chars.next();
+                } else if chars.peek() == Some(&'=') {
+                    tokens.push(Token::GreaterThanOrEqualTo);
+                    chars.next();
+                } else {
+                    tokens.push(Token::GreaterThan);
                 }
             }
             '&' => {
-                tokens.push(Token::BitwiseAND);
                 chars.next();
+                if chars.peek() == Some(&'&') {
+                    tokens.push(Token::And);
+                    chars.next();
+                } else {
+                    tokens.push(Token::BitwiseAnd);
+                }
             }
             '^' => {
-                tokens.push(Token::BitwiseXOR);
+                tokens.push(Token::BitwiseXor);
                 chars.next();
             }
             '|' => {
-                tokens.push(Token::BitwiseOR);
                 chars.next();
+                if chars.peek() == Some(&'|') {
+                    tokens.push(Token::Or);
+                    chars.next();
+                } else {
+                    tokens.push(Token::BitwiseOr);
+                }
+            }
+            '!' => {
+                chars.next();
+                if chars.peek() == Some(&'=') {
+                    tokens.push(Token::NotEqualTo);
+                    chars.next();
+                } else {
+                    tokens.push(Token::Not);
+                }
             }
             '~' => {
                 tokens.push(Token::Complement);
                 chars.next();
+            }
+            '=' => {
+                chars.next();
+                if chars.peek() == Some(&'=') {
+                    tokens.push(Token::EqualTo);
+                    chars.next();
+                }
             }
             '(' => {
                 tokens.push(Token::OpenParen);

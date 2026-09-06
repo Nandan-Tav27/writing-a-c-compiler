@@ -26,6 +26,22 @@ pub enum Instruction {
         src2: Value,
         dest: Value,
     },
+    Copy {
+        src: Value,
+        dest: Value,
+    },
+    Jump {
+        label: String,
+    },
+    JumpIfZero {
+        condition: Value,
+        label: String,
+    },
+    JumpIfNotZero {
+        condition: Value,
+        label: String,
+    },
+    Label(String),
 }
 
 #[derive(Debug)]
@@ -38,6 +54,7 @@ pub enum Value {
 pub enum UnaryOp {
     Complement,
     Negation,
+    Not,
 }
 
 impl From<parse::UnaryOp> for UnaryOp {
@@ -45,6 +62,7 @@ impl From<parse::UnaryOp> for UnaryOp {
         match op {
             parse::UnaryOp::Complement => UnaryOp::Complement,
             parse::UnaryOp::Negation => UnaryOp::Negation,
+            parse::UnaryOp::Not => UnaryOp::Not,
         }
     }
 }
@@ -58,30 +76,45 @@ pub enum BinaryOp {
     Remainder,
     LeftShift,
     RightShift,
-    BitwiseAND,
-    BitwiseXOR,
-    BitwiseOR,
+    BitwiseAnd,
+    BitwiseXor,
+    BitwiseOr,
+    EqualTo,
+    NotEqualTo,
+    LessThan,
+    GreaterThan,
+    LessThanOrEqualTo,
+    GreaterThanOrEqualTo,
 }
 
-impl From<parse::BinaryOp> for BinaryOp {
-    fn from(op: parse::BinaryOp) -> BinaryOp {
+impl BinaryOp {
+    fn parse_binary_op_to_tacky(op: parse::BinaryOp) -> anyhow::Result<BinaryOp> {
         match op {
-            parse::BinaryOp::Add => BinaryOp::Add,
-            parse::BinaryOp::Subtract => BinaryOp::Subtract,
-            parse::BinaryOp::Multiply => BinaryOp::Multiply,
-            parse::BinaryOp::Divide => BinaryOp::Divide,
-            parse::BinaryOp::Remainder => BinaryOp::Remainder,
-            parse::BinaryOp::LeftShift => BinaryOp::LeftShift,
-            parse::BinaryOp::RightShift => BinaryOp::RightShift,
-            parse::BinaryOp::BitwiseAND => BinaryOp::BitwiseAND,
-            parse::BinaryOp::BitwiseXOR => BinaryOp::BitwiseXOR,
-            parse::BinaryOp::BitwiseOR => BinaryOp::BitwiseOR,
+            parse::BinaryOp::Add => Ok(BinaryOp::Add),
+            parse::BinaryOp::Subtract => Ok(BinaryOp::Subtract),
+            parse::BinaryOp::Multiply => Ok(BinaryOp::Multiply),
+            parse::BinaryOp::Divide => Ok(BinaryOp::Divide),
+            parse::BinaryOp::Remainder => Ok(BinaryOp::Remainder),
+            parse::BinaryOp::LeftShift => Ok(BinaryOp::LeftShift),
+            parse::BinaryOp::RightShift => Ok(BinaryOp::RightShift),
+            parse::BinaryOp::BitwiseAnd => Ok(BinaryOp::BitwiseAnd),
+            parse::BinaryOp::BitwiseXor => Ok(BinaryOp::BitwiseXor),
+            parse::BinaryOp::BitwiseOr => Ok(BinaryOp::BitwiseOr),
+            parse::BinaryOp::EqualTo => Ok(BinaryOp::EqualTo),
+            parse::BinaryOp::NotEqualTo => Ok(BinaryOp::NotEqualTo),
+            parse::BinaryOp::LessThan => Ok(BinaryOp::LessThan),
+            parse::BinaryOp::GreaterThan => Ok(BinaryOp::GreaterThan),
+            parse::BinaryOp::LessThanOrEqualTo => Ok(BinaryOp::LessThanOrEqualTo),
+            parse::BinaryOp::GreaterThanOrEqualTo => Ok(BinaryOp::GreaterThanOrEqualTo),
+            _ => anyhow::bail!("Invalid binary operator to tacky conversion"),
         }
     }
 }
 
 pub struct TackyTransformer {
-    var_count: usize,
+    tmp_var_count: usize,
+    and_false_label: usize,
+    or_true_label: usize,
 }
 
 impl TackyTransformer {
@@ -113,9 +146,9 @@ impl TackyTransformer {
             parse::Expression::Unary(op, exp) => {
                 let unary_operator: UnaryOp = op.into();
                 let src = self.lower_expression(*exp, instrs);
-                let var = format!("tmp.{}", self.var_count);
+                let var = format!("tmp.{}", self.tmp_var_count);
                 let dest = Value::Var(var.clone());
-                self.var_count += 1;
+                self.tmp_var_count += 1;
                 let instr = Instruction::Unary {
                     unary_operator,
                     src,
@@ -124,13 +157,85 @@ impl TackyTransformer {
                 instrs.push(instr);
                 Value::Var(var)
             }
+            parse::Expression::Binary(parse::BinaryOp::And, exp1, exp2) => {
+                let var = format!("tmp.{}", self.tmp_var_count);
+                self.tmp_var_count += 1;
+                let label = format!("and_false{}", self.and_false_label);
+                let end_label = format!("and_false_end{}", self.and_false_label);
+                self.and_false_label += 1;
+
+                let src1 = self.lower_expression(*exp1, instrs);
+                instrs.push(Instruction::JumpIfZero {
+                    condition: src1,
+                    label: label.clone(),
+                });
+
+                let src2 = self.lower_expression(*exp2, instrs);
+                instrs.push(Instruction::JumpIfZero {
+                    condition: src2,
+                    label: label.clone(),
+                });
+
+                instrs.push(Instruction::Copy {
+                    src: Value::Constant(1),
+                    dest: Value::Var(var.clone()),
+                });
+                instrs.push(Instruction::Jump {
+                    label: end_label.clone(),
+                });
+
+                instrs.push(Instruction::Label(label));
+                instrs.push(Instruction::Copy {
+                    src: Value::Constant(0),
+                    dest: Value::Var(var.clone()),
+                });
+                instrs.push(Instruction::Label(end_label));
+
+                Value::Var(var)
+            }
+            parse::Expression::Binary(parse::BinaryOp::Or, exp1, exp2) => {
+                let var = format!("tmp.{}", self.tmp_var_count);
+                self.tmp_var_count += 1;
+                let label = format!("or_true{}", self.or_true_label);
+                let end_label = format!("or_true_end{}", self.or_true_label);
+                self.or_true_label += 1;
+
+                let src1 = self.lower_expression(*exp1, instrs);
+                instrs.push(Instruction::JumpIfNotZero {
+                    condition: src1,
+                    label: label.clone(),
+                });
+
+                let src2 = self.lower_expression(*exp2, instrs);
+                instrs.push(Instruction::JumpIfNotZero {
+                    condition: src2,
+                    label: label.clone(),
+                });
+
+                instrs.push(Instruction::Copy {
+                    src: Value::Constant(0),
+                    dest: Value::Var(var.clone()),
+                });
+                instrs.push(Instruction::Jump {
+                    label: end_label.clone(),
+                });
+
+                instrs.push(Instruction::Label(label));
+                instrs.push(Instruction::Copy {
+                    src: Value::Constant(1),
+                    dest: Value::Var(var.clone()),
+                });
+                instrs.push(Instruction::Label(end_label));
+
+                Value::Var(var)
+            }
             parse::Expression::Binary(op, exp1, exp2) => {
-                let binary_operator: BinaryOp = op.into();
+                let binary_operator: BinaryOp = BinaryOp::parse_binary_op_to_tacky(op).unwrap();
                 let src1 = self.lower_expression(*exp1, instrs);
                 let src2 = self.lower_expression(*exp2, instrs);
-                let var = format!("tmp.{}", self.var_count);
+                let var = format!("tmp.{}", self.tmp_var_count);
                 let dest = Value::Var(var.clone());
-                self.var_count += 1;
+                self.tmp_var_count += 1;
                 let instr = Instruction::Binary {
                     binary_operator,
                     src1,
@@ -145,6 +250,10 @@ impl TackyTransformer {
 }
 
 pub fn transform(program: parse::Program) -> Program {
-    let mut transformer = TackyTransformer { var_count: 0 };
+    let mut transformer = TackyTransformer {
+        tmp_var_count: 0,
+        and_false_label: 0,
+        or_true_label: 0,
+    };
     transformer.lower_program(program)
 }

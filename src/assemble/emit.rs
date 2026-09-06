@@ -48,11 +48,11 @@ fn write_instructions(
                 write!(contents, "\tmov{} ", suffix).context(
                     "Assembly generation error: error while writing instruction to file",
                 )?;
-                write_operand(contents, source)?;
+                write_operand(contents, source, 4)?;
                 write!(contents, ", ").context(
                     "Assembly generation error: error while writing instruction to file",
                 )?;
-                write_operand(contents, dest)?;
+                write_operand(contents, dest, 4)?;
                 writeln!(contents).context(
                     "Assembly generation error: error while writing instruction to file",
                 )?;
@@ -76,7 +76,7 @@ fn write_instructions(
                 write!(contents, " ").context(
                     "Assembly generation error: error while writing instruction to file",
                 )?;
-                write_operand(contents, operand)?;
+                write_operand(contents, operand, 4)?;
                 writeln!(contents).context(
                     "Assembly generation error: error while writing instruction to file",
                 )?;
@@ -94,11 +94,11 @@ fn write_instructions(
                 write!(contents, " ").context(
                     "Assembly generation error: error while writing instruction to file",
                 )?;
-                write_operand(contents, operand1)?;
+                write_operand(contents, operand1, 4)?;
                 write!(contents, ", ").context(
                     "Assembly generation error: error while writing instruction to file",
                 )?;
-                write_operand(contents, operand2)?;
+                write_operand(contents, operand2, 4)?;
                 writeln!(contents).context(
                     "Assembly generation error: error while writing instruction to file",
                 )?;
@@ -107,7 +107,7 @@ fn write_instructions(
                 write!(contents, "\tidivl ").context(
                     "Assembly generation error: error while writing instruction to file",
                 )?;
-                write_operand(contents, operand)?;
+                write_operand(contents, operand, 4)?;
                 writeln!(contents).context(
                     "Assembly generation error: error while writing instruction to file",
                 )?;
@@ -117,24 +117,90 @@ fn write_instructions(
                     "Assembly generation error: error while writing instruction to file",
                 )?;
             }
+            assembler::Instruction::Cmp(operand1, operand2) => {
+                write!(contents, "\tcmpl ").context(
+                    "Assembly generation error: error while writing instruction to file",
+                )?;
+                write_operand(contents, operand1, 4)?;
+                write!(contents, ", ").context(
+                    "Assembly generation error: error while writing instruction to file",
+                )?;
+                write_operand(contents, operand2, 4)?;
+                writeln!(contents).context(
+                    "Assembly generation error: error while writing instruction to file",
+                )?;
+            }
+            assembler::Instruction::Jmp(label) => {
+                write!(contents, "\tjmp ").context(
+                    "Assembly generation error: error while writing instruction to file",
+                )?;
+                write!(contents, ".L{}", label).context(
+                    "Assembly generation error: error while writing instruction to file",
+                )?;
+                writeln!(contents).context(
+                    "Assembly generation error: error while writing instruction to file",
+                )?;
+            }
+            assembler::Instruction::JmpCC(cc, label) => {
+                write!(contents, "\tj").context(
+                    "Assembly generation error: error while writing instruction to file",
+                )?;
+                write_condition_code(contents, cc)?;
+                write!(contents, " .L{}", label).context(
+                    "Assembly generation error: error while writing instruction to file",
+                )?;
+                writeln!(contents).context(
+                    "Assembly generation error: error while writing instruction to file",
+                )?;
+            }
+            assembler::Instruction::SetCC(cc, operand) => {
+                write!(contents, "\tset").context(
+                    "Assembly generation error: error while writing instruction to file",
+                )?;
+                write_condition_code(contents, cc)?;
+                write!(contents, " ").context(
+                    "Assembly generation error: error while writing instruction to file",
+                )?;
+                write_operand(contents, operand, 1)?;
+                writeln!(contents).context(
+                    "Assembly generation error: error while writing instruction to file",
+                )?;
+            }
+            assembler::Instruction::Label(label) => {
+                writeln!(contents, ".L{}:", label).context(
+                    "Assembly generation error: error while writing instruction to file",
+                )?;
+            }
         }
     }
 
     Ok(())
 }
 
-fn write_operand(contents: &mut String, operand: assembler::Operand) -> anyhow::Result<()> {
+fn write_operand(
+    contents: &mut String,
+    operand: assembler::Operand,
+    bytes: u8,
+) -> anyhow::Result<()> {
     match operand {
         assembler::Operand::Imm(val) => write!(contents, "${}", val)
             .context("Assembly generation error: error while writing operand to file"),
-        assembler::Operand::Register(reg) => write_register(contents, reg),
+        assembler::Operand::Register(reg) => {
+            if bytes == 4 {
+                write_4byte_register(contents, reg)
+            } else if bytes == 1 {
+                write_1byte_register(contents, reg)
+            } else {
+                anyhow::bail!("Assembly generation error: invalid byte size provided for operand")
+            }
+        }
         assembler::Operand::Stack(offset) => write!(contents, "{}(%rbp)", offset)
             .context("Assembly generation error: error while writing operand to file"),
         _ => anyhow::bail!("Assembly generation error: encountered invalid operand type"),
     }
 }
 
-fn write_register(contents: &mut String, register: assembler::Reg) -> anyhow::Result<()> {
+fn write_4byte_register(contents: &mut String, register: assembler::Reg) -> anyhow::Result<()> {
     match register {
         assembler::Reg::AX => write!(contents, "%eax")
             .context("Assembly generation error: error while writing register to file"),
@@ -146,6 +212,20 @@ fn write_register(contents: &mut String, register: assembler::Reg) -> anyhow::Re
             .context("Assembly generation error: error while writing register to file"),
         assembler::Reg::CL => write!(contents, "%cl")
             .context("Assembly generation error: error while writing register to file"),
+    }
+}
+
+fn write_1byte_register(contents: &mut String, register: assembler::Reg) -> anyhow::Result<()> {
+    match register {
+        assembler::Reg::AX => write!(contents, "%al")
+            .context("Assembly generation error: error while writing register to file"),
+        assembler::Reg::DX => write!(contents, "%dl")
+            .context("Assembly generation error: error while writing register to file"),
+        assembler::Reg::R10 => write!(contents, "%r10b")
+            .context("Assembly generation error: error while writing register to file"),
+        assembler::Reg::R11 => write!(contents, "%r11b")
+            .context("Assembly generation error: error while writing register to file"),
+        _ => anyhow::bail!("Assembly generation error: invalid 1-byte register provided"),
     }
 }
 
@@ -176,5 +256,22 @@ fn write_binary_op(contents: &mut String, op: assembler::BinaryOp) -> anyhow::Re
             .context("Assembly generation error: error while writing unary operator to file"),
         assembler::BinaryOp::Or => write!(contents, "orl")
             .context("Assembly generation error: error while writing unary operator to file"),
+    }
+}
+
+fn write_condition_code(contents: &mut String, cc: assembler::CondCode) -> anyhow::Result<()> {
+    match cc {
+        assembler::CondCode::E => write!(contents, "e")
+            .context("Assembly generation error: error while writing condition code to file"),
+        assembler::CondCode::NE => write!(contents, "ne")
+            .context("Assembly generation error: error while writing condition code to file"),
+        assembler::CondCode::L => write!(contents, "l")
+            .context("Assembly generation error: error while writing condition code to file"),
+        assembler::CondCode::LE => write!(contents, "le")
+            .context("Assembly generation error: error while writing condition code to file"),
+        assembler::CondCode::G => write!(contents, "g")
+            .context("Assembly generation error: error while writing condition code to file"),
+        assembler::CondCode::GE => write!(contents, "ge")
+            .context("Assembly generation error: error while writing condition code to file"),
     }
 }

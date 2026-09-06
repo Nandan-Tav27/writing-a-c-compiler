@@ -27,6 +27,7 @@ pub enum Expression {
 pub enum UnaryOp {
     Complement,
     Negation,
+    Not,
 }
 
 #[derive(Debug)]
@@ -38,17 +39,32 @@ pub enum BinaryOp {
     Remainder,
     LeftShift,
     RightShift,
-    BitwiseAND,
-    BitwiseXOR,
-    BitwiseOR,
+    BitwiseAnd,
+    BitwiseXor,
+    BitwiseOr,
+    And,
+    Or,
+    EqualTo,
+    NotEqualTo,
+    LessThan,
+    GreaterThan,
+    LessThanOrEqualTo,
+    GreaterThanOrEqualTo,
 }
 
 impl BinaryOp {
     fn precedence(&self) -> u8 {
         match self {
-            BinaryOp::BitwiseOR => 25,
-            BinaryOp::BitwiseXOR => 30,
-            BinaryOp::BitwiseAND => 35,
+            BinaryOp::Or => 5,
+            BinaryOp::And => 10,
+            BinaryOp::BitwiseOr => 15,
+            BinaryOp::BitwiseXor => 20,
+            BinaryOp::BitwiseAnd => 25,
+            BinaryOp::EqualTo | BinaryOp::NotEqualTo => 30,
+            BinaryOp::LessThan
+            | BinaryOp::GreaterThan
+            | BinaryOp::LessThanOrEqualTo
+            | BinaryOp::GreaterThanOrEqualTo => 35,
             BinaryOp::LeftShift | BinaryOp::RightShift => 40,
             BinaryOp::Add | BinaryOp::Subtract => 45,
             BinaryOp::Multiply | BinaryOp::Divide | BinaryOp::Remainder => 50,
@@ -134,7 +150,7 @@ impl<'a> Parser<'a> {
     fn parse_factor(&mut self) -> anyhow::Result<Expression> {
         match self.next() {
             Some(Token::Constant(val)) => Ok(Expression::Constant(*val)),
-            Some(tok @ (Token::Complement | Token::Negation)) => {
+            Some(tok @ (Token::Complement | Token::Negation | Token::Not)) => {
                 let op = Self::parse_unary_op(tok)?;
                 let exp = self.parse_factor()?;
                 Ok(Expression::Unary(op, Box::new(exp)))
@@ -158,6 +174,7 @@ impl<'a> Parser<'a> {
         match tok {
             Token::Complement => Ok(UnaryOp::Complement),
             Token::Negation => Ok(UnaryOp::Negation),
+            Token::Not => Ok(UnaryOp::Not),
             _ => anyhow::bail!("Invalid unary operator"),
         }
     }
@@ -171,9 +188,17 @@ impl<'a> Parser<'a> {
             Token::Remainder => Ok(BinaryOp::Remainder),
             Token::LeftShift => Ok(BinaryOp::LeftShift),
             Token::RightShift => Ok(BinaryOp::RightShift),
-            Token::BitwiseAND => Ok(BinaryOp::BitwiseAND),
-            Token::BitwiseXOR => Ok(BinaryOp::BitwiseXOR),
-            Token::BitwiseOR => Ok(BinaryOp::BitwiseOR),
+            Token::BitwiseAnd => Ok(BinaryOp::BitwiseAnd),
+            Token::BitwiseXor => Ok(BinaryOp::BitwiseXor),
+            Token::BitwiseOr => Ok(BinaryOp::BitwiseOr),
+            Token::And => Ok(BinaryOp::And),
+            Token::Or => Ok(BinaryOp::Or),
+            Token::EqualTo => Ok(BinaryOp::EqualTo),
+            Token::NotEqualTo => Ok(BinaryOp::NotEqualTo),
+            Token::LessThan => Ok(BinaryOp::LessThan),
+            Token::GreaterThan => Ok(BinaryOp::GreaterThan),
+            Token::LessThanOrEqualTo => Ok(BinaryOp::LessThanOrEqualTo),
+            Token::GreaterThanOrEqualTo => Ok(BinaryOp::GreaterThanOrEqualTo),
             _ => anyhow::bail!("Invalid binary operator"),
         }
     }

@@ -14,8 +14,13 @@ pub struct FunctionDef {
 pub enum Instruction {
     Mov { source: Operand, dest: Operand },
     Unary(UnaryOp, Operand),
+    Cmp(Operand, Operand),
     Binary(BinaryOp, Operand, Operand),
     Idiv(Operand),
+    Jmp(String),
+    JmpCC(CondCode, String),
+    SetCC(CondCode, Operand),
+    Label(String),
     Cdq,
     AllocateStack(u64),
     Ret,
@@ -26,11 +31,12 @@ pub enum UnaryOp {
     Neg,
 }
 
-impl From<tacky::UnaryOp> for UnaryOp {
-    fn from(op: tacky::UnaryOp) -> UnaryOp {
+impl UnaryOp {
+    fn tacky_to_unary_op(op: tacky::UnaryOp) -> anyhow::Result<UnaryOp> {
         match op {
-            tacky::UnaryOp::Complement => UnaryOp::Not,
-            tacky::UnaryOp::Negation => UnaryOp::Neg,
+            tacky::UnaryOp::Complement => Ok(UnaryOp::Not),
+            tacky::UnaryOp::Negation => Ok(UnaryOp::Neg),
+            _ => anyhow::bail!("Invalid tacky to unary operator conversion"),
         }
     }
 }
@@ -72,6 +78,15 @@ pub enum Reg {
     CL,
 }
 
+pub enum CondCode {
+    E,
+    NE,
+    G,
+    GE,
+    L,
+    LE,
+}
+
 pub fn assemble(program: tacky::Program) -> Program {
     let mut program = lower_program(program);
     let offset = replace_pseudo(&mut program);
@@ -105,6 +120,19 @@ fn lower_instruction(instr: tacky::Instruction, instrs: &mut Vec<Instruction>) {
             instrs.push(Instruction::Ret);
         }
         tacky::Instruction::Unary {
+            unary_operator: tacky::UnaryOp::Not,
+            src,
+            dest,
+        } => {
+            let dest: Operand = dest.into();
+            instrs.push(Instruction::Cmp(Operand::Imm(0), src.into()));
+            instrs.push(Instruction::Mov {
+                source: Operand::Imm(0),
+                dest: dest.clone(),
+            });
+            instrs.push(Instruction::SetCC(CondCode::E, dest));
+        }
+        tacky::Instruction::Unary {
             unary_operator,
             src,
             dest,
@@ -114,7 +142,10 @@ fn lower_instruction(instr: tacky::Instruction, instrs: &mut Vec<Instruction>) {
                 source: src.into(),
                 dest: dest.clone(),
             });
-            instrs.push(Instruction::Unary(unary_operator.into(), dest));
+            instrs.push(Instruction::Unary(
+                UnaryOp::tacky_to_unary_op(unary_operator).unwrap(),
+                dest,
+            ));
         }
         tacky::Instruction::Binary {
             binary_operator,
@@ -186,7 +217,7 @@ fn lower_instruction(instr: tacky::Instruction, instrs: &mut Vec<Instruction>) {
                 });
                 instrs.push(Instruction::Binary(BinaryOp::Sar, src2.into(), dest));
             }
-            tacky::BinaryOp::BitwiseAND => {
+            tacky::BinaryOp::BitwiseAnd => {
                 let dest: Operand = dest.into();
                 instrs.push(Instruction::Mov {
                     source: src1.into(),
@@ -194,7 +225,7 @@ fn lower_instruction(instr: tacky::Instruction, instrs: &mut Vec<Instruction>) {
                 });
                 instrs.push(Instruction::Binary(BinaryOp::And, src2.into(), dest));
             }
-            tacky::BinaryOp::BitwiseXOR => {
+            tacky::BinaryOp::BitwiseXor => {
                 let dest: Operand = dest.into();
                 instrs.push(Instruction::Mov {
                     source: src1.into(),
@@ -202,7 +233,7 @@ fn lower_instruction(instr: tacky::Instruction, instrs: &mut Vec<Instruction>) {
                 });
                 instrs.push(Instruction::Binary(BinaryOp::Xor, src2.into(), dest));
             }
-            tacky::BinaryOp::BitwiseOR => {
+            tacky::BinaryOp::BitwiseOr => {
                 let dest: Operand = dest.into();
                 instrs.push(Instruction::Mov {
                     source: src1.into(),
@@ -210,7 +241,81 @@ fn lower_instruction(instr: tacky::Instruction, instrs: &mut Vec<Instruction>) {
                 });
                 instrs.push(Instruction::Binary(BinaryOp::Or, src2.into(), dest));
             }
+            tacky::BinaryOp::EqualTo => {
+                let dest: Operand = dest.into();
+                instrs.push(Instruction::Cmp(src2.into(), src1.into()));
+                instrs.push(Instruction::Mov {
+                    source: Operand::Imm(0),
+                    dest: dest.clone(),
+                });
+                instrs.push(Instruction::SetCC(CondCode::E, dest));
+            }
+            tacky::BinaryOp::NotEqualTo => {
+                let dest: Operand = dest.into();
+                instrs.push(Instruction::Cmp(src2.into(), src1.into()));
+                instrs.push(Instruction::Mov {
+                    source: Operand::Imm(0),
+                    dest: dest.clone(),
+                });
+                instrs.push(Instruction::SetCC(CondCode::NE, dest));
+            }
+            tacky::BinaryOp::LessThan => {
+                let dest: Operand = dest.into();
+                instrs.push(Instruction::Cmp(src2.into(), src1.into()));
+                instrs.push(Instruction::Mov {
+                    source: Operand::Imm(0),
+                    dest: dest.clone(),
+                });
+                instrs.push(Instruction::SetCC(CondCode::L, dest));
+            }
+            tacky::BinaryOp::GreaterThan => {
+                let dest: Operand = dest.into();
+                instrs.push(Instruction::Cmp(src2.into(), src1.into()));
+                instrs.push(Instruction::Mov {
+                    source: Operand::Imm(0),
+                    dest: dest.clone(),
+                });
+                instrs.push(Instruction::SetCC(CondCode::G, dest));
+            }
+            tacky::BinaryOp::LessThanOrEqualTo => {
+                let dest: Operand = dest.into();
+                instrs.push(Instruction::Cmp(src2.into(), src1.into()));
+                instrs.push(Instruction::Mov {
+                    source: Operand::Imm(0),
+                    dest: dest.clone(),
+                });
+                instrs.push(Instruction::SetCC(CondCode::LE, dest));
+            }
+            tacky::BinaryOp::GreaterThanOrEqualTo => {
+                let dest: Operand = dest.into();
+                instrs.push(Instruction::Cmp(src2.into(), src1.into()));
+                instrs.push(Instruction::Mov {
+                    source: Operand::Imm(0),
+                    dest: dest.clone(),
+                });
+                instrs.push(Instruction::SetCC(CondCode::GE, dest));
+            }
         },
+        tacky::Instruction::Jump { label } => {
+            instrs.push(Instruction::Jmp(label));
+        }
+        tacky::Instruction::JumpIfZero { condition, label } => {
+            instrs.push(Instruction::Cmp(Operand::Imm(0), condition.into()));
+            instrs.push(Instruction::JmpCC(CondCode::E, label));
+        }
+        tacky::Instruction::JumpIfNotZero { condition, label } => {
+            instrs.push(Instruction::Cmp(Operand::Imm(0), condition.into()));
+            instrs.push(Instruction::JmpCC(CondCode::NE, label));
+        }
+        tacky::Instruction::Copy { src, dest } => {
+            instrs.push(Instruction::Mov {
+                source: src.into(),
+                dest: dest.into(),
+            });
+        }
+        tacky::Instruction::Label(label) => {
+            instrs.push(Instruction::Label(label));
+        }
     }
 }
 
@@ -232,6 +337,13 @@ fn replace_pseudo(program: &mut Program) -> i64 {
                 replace_pseudo_with_stack(operand_2, &mut pseudo_offset_map, &mut offset);
             }
             Instruction::Idiv(operand) => {
+                replace_pseudo_with_stack(operand, &mut pseudo_offset_map, &mut offset);
+            }
+            Instruction::Cmp(operand_1, operand_2) => {
+                replace_pseudo_with_stack(operand_1, &mut pseudo_offset_map, &mut offset);
+                replace_pseudo_with_stack(operand_2, &mut pseudo_offset_map, &mut offset);
+            }
+            Instruction::SetCC(_, operand) => {
                 replace_pseudo_with_stack(operand, &mut pseudo_offset_map, &mut offset);
             }
             _ => {}
@@ -388,6 +500,24 @@ fn allocate_stack_and_temp_reg(program: Program, offset: i64) -> Program {
                     Operand::Register(Reg::R10),
                     Operand::Stack(o2),
                 );
+                updated_instructions.push(instr1);
+                updated_instructions.push(instr2);
+            }
+            Instruction::Cmp(Operand::Stack(o1), Operand::Stack(o2)) => {
+                let instr1 = Instruction::Mov {
+                    source: Operand::Stack(o1),
+                    dest: Operand::Register(Reg::R10),
+                };
+                let instr2 = Instruction::Cmp(Operand::Register(Reg::R10), Operand::Stack(o2));
+                updated_instructions.push(instr1);
+                updated_instructions.push(instr2);
+            }
+            Instruction::Cmp(o1, Operand::Imm(val)) => {
+                let instr1 = Instruction::Mov {
+                    source: Operand::Imm(val),
+                    dest: Operand::Register(Reg::R11),
+                };
+                let instr2 = Instruction::Cmp(o1, Operand::Register(Reg::R11));
                 updated_instructions.push(instr1);
                 updated_instructions.push(instr2);
             }
