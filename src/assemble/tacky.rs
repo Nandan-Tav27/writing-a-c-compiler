@@ -124,20 +124,47 @@ impl TackyTransformer {
     }
 
     fn lower_function_def(&mut self, function_def: parse::FunctionDef) -> FunctionDef {
-        let name = function_def.name;
-        let body = self.lower_statement(function_def.body);
-        FunctionDef { name, body }
-    }
-
-    fn lower_statement(&mut self, statement: parse::Statement) -> Vec<Instruction> {
-        let mut instrs: Vec<Instruction> = Vec::new();
-        match statement {
-            parse::Statement::Return(exp) => {
-                let val = self.lower_expression(exp, &mut instrs);
-                instrs.push(Instruction::Ret(val));
+        let parse::FunctionDef { name, body } = function_def;
+        let mut instrs = Vec::new();
+        for block_item in body {
+            match block_item {
+                parse::BlockItem::S(statement) => self.lower_statement(statement, &mut instrs),
+                parse::BlockItem::D(declaration) => {
+                    self.lower_declaration(declaration, &mut instrs)
+                }
             }
         }
-        instrs
+        instrs.push(Instruction::Ret(Value::Constant(0)));
+        FunctionDef { name, body: instrs }
+    }
+
+    fn lower_statement(&mut self, statement: parse::Statement, instrs: &mut Vec<Instruction>) {
+        match statement {
+            parse::Statement::Return(exp) => {
+                let val = self.lower_expression(exp, instrs);
+                instrs.push(Instruction::Ret(val));
+            }
+            parse::Statement::Expression(exp) => {
+                self.lower_expression(exp, instrs);
+            }
+            parse::Statement::Null => {}
+        }
+    }
+
+    fn lower_declaration(
+        &mut self,
+        declaration: parse::Declaration,
+        instrs: &mut Vec<Instruction>,
+    ) {
+        if let Some(init) = declaration.init {
+            self.lower_expression(
+                parse::Expression::Assignment(
+                    Box::new(parse::Expression::Var(declaration.name)),
+                    Box::new(init),
+                ),
+                instrs,
+            );
+        }
     }
 
     fn lower_expression(&mut self, exp: parse::Expression, instrs: &mut Vec<Instruction>) -> Value {
@@ -245,13 +272,95 @@ impl TackyTransformer {
                 instrs.push(instr);
                 Value::Var(var)
             }
+            parse::Expression::Var(name) => Value::Var(name),
+            parse::Expression::Assignment(exp1, exp2) => {
+                let parse::Expression::Var(v) = *exp1 else {
+                    unreachable!(
+                        "Assignment lvalue must be a Var, guaranteed by semantic analysis"
+                    );
+                };
+                let res = self.lower_expression(*exp2, instrs);
+                instrs.push(Instruction::Copy {
+                    src: res,
+                    dest: Value::Var(v.clone()),
+                });
+                Value::Var(v)
+            }
+            parse::Expression::PrefixIncr(exp) => {
+                let parse::Expression::Var(v) = *exp else {
+                    unreachable!(
+                        "Assignment lvalue must be a Var, guaranteed by semantic analysis"
+                    );
+                };
+                instrs.push(Instruction::Binary {
+                    binary_operator: BinaryOp::Add,
+                    src1: Value::Var(v.clone()),
+                    src2: Value::Constant(1),
+                    dest: Value::Var(v.clone()),
+                });
+                Value::Var(v)
+            }
+            parse::Expression::PrefixDecr(exp) => {
+                let parse::Expression::Var(v) = *exp else {
+                    unreachable!(
+                        "Assignment lvalue must be a Var, guaranteed by semantic analysis"
+                    );
+                };
+                instrs.push(Instruction::Binary {
+                    binary_operator: BinaryOp::Subtract,
+                    src1: Value::Var(v.clone()),
+                    src2: Value::Constant(1),
+                    dest: Value::Var(v.clone()),
+                });
+                Value::Var(v)
+            }
+            parse::Expression::PostfixIncr(exp) => {
+                let parse::Expression::Var(v) = *exp else {
+                    unreachable!(
+                        "Assignment lvalue must be a Var, guaranteed by semantic analysis"
+                    );
+                };
+                let var = format!("tmp.{}", self.tmp_var_count);
+                self.tmp_var_count += 1;
+                instrs.push(Instruction::Copy {
+                    src: Value::Var(v.clone()),
+                    dest: Value::Var(var.clone()),
+                });
+                instrs.push(Instruction::Binary {
+                    binary_operator: BinaryOp::Add,
+                    src1: Value::Var(v.clone()),
+                    src2: Value::Constant(1),
+                    dest: Value::Var(v),
+                });
+                Value::Var(var)
+            }
+            parse::Expression::PostfixDecr(exp) => {
+                let parse::Expression::Var(v) = *exp else {
+                    unreachable!(
+                        "Assignment lvalue must be a Var, guaranteed by semantic analysis"
+                    );
+                };
+                let var = format!("tmp.{}", self.tmp_var_count);
+                self.tmp_var_count += 1;
+                instrs.push(Instruction::Copy {
+                    src: Value::Var(v.clone()),
+                    dest: Value::Var(var.clone()),
+                });
+                instrs.push(Instruction::Binary {
+                    binary_operator: BinaryOp::Subtract,
+                    src1: Value::Var(v.clone()),
+                    src2: Value::Constant(1),
+                    dest: Value::Var(v),
+                });
+                Value::Var(var)
+            }
         }
     }
 }
 
-pub fn transform(program: parse::Program) -> Program {
+pub fn transform(program: parse::Program, var_count: &mut usize) -> Program {
     let mut transformer = TackyTransformer {
-        tmp_var_count: 0,
+        tmp_var_count: *var_count,
         and_false_label: 0,
         or_true_label: 0,
     };

@@ -7,15 +7,17 @@ use std::path::PathBuf;
 #[derive(Parser)]
 struct Cli {
     file_path: PathBuf,
-    #[arg(long, conflicts_with_all = ["parse", "tacky", "codegen", "s"])]
+    #[arg(long, conflicts_with_all = ["parse", "validate", "tacky", "codegen", "s"])]
     lex: bool,
-    #[arg(long, conflicts_with_all = ["lex", "tacky", "codegen", "s"])]
+    #[arg(long, conflicts_with_all = ["lex", "validate", "tacky", "codegen", "s"])]
     parse: bool,
-    #[arg(long, conflicts_with_all = ["lex", "parse", "codegen", "s"])]
+    #[arg(long, conflicts_with_all = ["lex", "parse", "tacky", "codegen", "s"])]
+    validate: bool,
+    #[arg(long, conflicts_with_all = ["lex", "parse", "validate", "codegen", "s"])]
     tacky: bool,
-    #[arg(long, conflicts_with_all = ["lex", "parse", "tacky", "s"])]
+    #[arg(long, conflicts_with_all = ["lex", "parse", "validate", "tacky", "s"])]
     codegen: bool,
-    #[arg(short = 'S', conflicts_with_all = ["lex", "parse", "tacky", "codegen"])]
+    #[arg(short = 'S', conflicts_with_all = ["lex", "parse", "validate", "tacky", "codegen"])]
     s: bool,
 }
 
@@ -25,6 +27,8 @@ fn main() -> anyhow::Result<()> {
         driver::Stage::Lex
     } else if cli.parse {
         driver::Stage::Parse
+    } else if cli.validate {
+        driver::Stage::Sema
     } else if cli.tacky {
         driver::Stage::Tacky
     } else if cli.codegen {

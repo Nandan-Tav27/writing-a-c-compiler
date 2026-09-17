@@ -6,12 +6,13 @@ use std::{
 
 use anyhow::Context;
 
-use crate::assemble::{assembler, emit, lex, parse, tacky};
+use crate::assemble::{assembler, emit, lex, parse, sema, tacky};
 
 #[derive(Debug, PartialEq)]
 pub enum Stage {
     Lex,
     Parse,
+    Sema,
     Tacky,
     Codegen,
     Full,
@@ -69,8 +70,18 @@ pub fn assemble(file_path: PathBuf, stage: Stage) -> anyhow::Result<Option<PathB
         return Ok(None);
     }
 
+    // SEMA
+    let mut var_count = 0;
+    let program = sema::resolve(program, &mut var_count)?;
+    println!("{:#?}", program);
+
+    if stage == Stage::Sema {
+        fs::remove_file(file_path)?;
+        return Ok(None);
+    }
+
     // transform to TACKY
-    let tacky = tacky::transform(program);
+    let tacky = tacky::transform(program, &mut var_count);
     println!("{:#?}", tacky);
 
     if stage == Stage::Tacky {

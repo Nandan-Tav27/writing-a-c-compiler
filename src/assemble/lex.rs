@@ -14,6 +14,7 @@ pub enum Token {
     Semicolon,
     Complement,
     Negation,
+    Increment,
     Decrement,
     Addition,
     Multiplication,
@@ -33,6 +34,17 @@ pub enum Token {
     GreaterThan,
     LessThanOrEqualTo,
     GreaterThanOrEqualTo,
+    Assignment,
+    CmpdAddAssn,
+    CmpdSubAssn,
+    CmpdMulAssn,
+    CmpdDivAssn,
+    CmpdRemAssn,
+    CmpdLShiftAssn,
+    CmpdRShiftAssn,
+    CmpdBitwiseAndAssn,
+    CmpdBitwiseXorAssn,
+    CmpdBitwiseOrAssn,
 }
 
 pub fn lex(file_path: &Path) -> anyhow::Result<Vec<Token>> {
@@ -84,114 +96,183 @@ pub fn lex(file_path: &Path) -> anyhow::Result<Vec<Token>> {
             }
             '-' => {
                 chars.next();
-                if chars.peek() == Some(&'-') {
-                    tokens.push(Token::Decrement);
-                    chars.next();
-                } else {
-                    tokens.push(Token::Negation);
+                match chars.peek() {
+                    Some(&'-') => {
+                        chars.next();
+                        tokens.push(Token::Decrement);
+                    }
+                    Some(&'=') => {
+                        chars.next();
+                        tokens.push(Token::CmpdSubAssn);
+                    }
+                    _ => tokens.push(Token::Negation),
                 }
             }
             '+' => {
-                tokens.push(Token::Addition);
                 chars.next();
+                match chars.peek() {
+                    Some(&'+') => {
+                        chars.next();
+                        tokens.push(Token::Increment);
+                    }
+                    Some(&'=') => {
+                        chars.next();
+                        tokens.push(Token::CmpdAddAssn);
+                    }
+                    _ => tokens.push(Token::Addition),
+                }
             }
             '*' => {
-                tokens.push(Token::Multiplication);
                 chars.next();
+                match chars.peek() {
+                    Some(&'=') => {
+                        chars.next();
+                        tokens.push(Token::CmpdMulAssn);
+                    }
+                    _ => tokens.push(Token::Multiplication),
+                }
             }
             '/' => {
-                tokens.push(Token::Division);
                 chars.next();
+                match chars.peek() {
+                    Some(&'=') => {
+                        chars.next();
+                        tokens.push(Token::CmpdDivAssn);
+                    }
+                    _ => tokens.push(Token::Division),
+                }
             }
             '%' => {
-                tokens.push(Token::Remainder);
                 chars.next();
+                match chars.peek() {
+                    Some(&'=') => {
+                        chars.next();
+                        tokens.push(Token::CmpdRemAssn);
+                    }
+                    _ => tokens.push(Token::Remainder),
+                }
             }
             '<' => {
                 chars.next();
-                if chars.peek() == Some(&'<') {
-                    tokens.push(Token::LeftShift);
-                    chars.next();
-                } else if chars.peek() == Some(&'=') {
-                    tokens.push(Token::LessThanOrEqualTo);
-                    chars.next();
-                } else {
-                    tokens.push(Token::LessThan);
+                match chars.peek() {
+                    Some(&'<') => {
+                        chars.next();
+                        match chars.peek() {
+                            Some(&'=') => {
+                                chars.next();
+                                tokens.push(Token::CmpdLShiftAssn);
+                            }
+                            _ => tokens.push(Token::LeftShift),
+                        }
+                    }
+                    Some(&'=') => {
+                        chars.next();
+                        tokens.push(Token::LessThanOrEqualTo);
+                    }
+                    _ => tokens.push(Token::LessThan),
                 }
             }
             '>' => {
                 chars.next();
-                if chars.peek() == Some(&'>') {
-                    tokens.push(Token::RightShift);
-                    chars.next();
-                } else if chars.peek() == Some(&'=') {
-                    tokens.push(Token::GreaterThanOrEqualTo);
-                    chars.next();
-                } else {
-                    tokens.push(Token::GreaterThan);
+                match chars.peek() {
+                    Some(&'>') => {
+                        chars.next();
+                        match chars.peek() {
+                            Some(&'=') => {
+                                chars.next();
+                                tokens.push(Token::CmpdRShiftAssn);
+                            }
+                            _ => tokens.push(Token::RightShift),
+                        }
+                    }
+                    Some(&'=') => {
+                        chars.next();
+                        tokens.push(Token::GreaterThanOrEqualTo);
+                    }
+                    _ => tokens.push(Token::GreaterThan),
                 }
             }
             '&' => {
                 chars.next();
-                if chars.peek() == Some(&'&') {
-                    tokens.push(Token::And);
-                    chars.next();
-                } else {
-                    tokens.push(Token::BitwiseAnd);
+                match chars.peek() {
+                    Some(&'&') => {
+                        chars.next();
+                        tokens.push(Token::And);
+                    }
+                    Some(&'=') => {
+                        chars.next();
+                        tokens.push(Token::CmpdBitwiseAndAssn);
+                    }
+                    _ => tokens.push(Token::BitwiseAnd),
                 }
             }
             '^' => {
-                tokens.push(Token::BitwiseXor);
                 chars.next();
+                match chars.peek() {
+                    Some(&'=') => {
+                        chars.next();
+                        tokens.push(Token::CmpdBitwiseXorAssn);
+                    }
+                    _ => tokens.push(Token::BitwiseXor),
+                }
             }
             '|' => {
                 chars.next();
-                if chars.peek() == Some(&'|') {
-                    tokens.push(Token::Or);
-                    chars.next();
-                } else {
-                    tokens.push(Token::BitwiseOr);
+                match chars.peek() {
+                    Some(&'|') => {
+                        chars.next();
+                        tokens.push(Token::Or);
+                    }
+                    Some(&'=') => {
+                        chars.next();
+                        tokens.push(Token::CmpdBitwiseOrAssn);
+                    }
+                    _ => tokens.push(Token::BitwiseOr),
                 }
             }
             '!' => {
                 chars.next();
-                if chars.peek() == Some(&'=') {
-                    tokens.push(Token::NotEqualTo);
-                    chars.next();
-                } else {
-                    tokens.push(Token::Not);
+                match chars.peek() {
+                    Some(&'=') => {
+                        chars.next();
+                        tokens.push(Token::NotEqualTo);
+                    }
+                    _ => tokens.push(Token::Not),
                 }
             }
             '~' => {
-                tokens.push(Token::Complement);
                 chars.next();
+                tokens.push(Token::Complement);
             }
             '=' => {
                 chars.next();
-                if chars.peek() == Some(&'=') {
-                    tokens.push(Token::EqualTo);
-                    chars.next();
+                match chars.peek() {
+                    Some(&'=') => {
+                        chars.next();
+                        tokens.push(Token::EqualTo);
+                    }
+                    _ => tokens.push(Token::Assignment),
                 }
             }
             '(' => {
-                tokens.push(Token::OpenParen);
                 chars.next();
+                tokens.push(Token::OpenParen);
             }
             ')' => {
-                tokens.push(Token::CloseParen);
                 chars.next();
+                tokens.push(Token::CloseParen);
             }
             '{' => {
-                tokens.push(Token::OpenBrace);
                 chars.next();
+                tokens.push(Token::OpenBrace);
             }
             '}' => {
-                tokens.push(Token::CloseBrace);
                 chars.next();
+                tokens.push(Token::CloseBrace);
             }
             ';' => {
-                tokens.push(Token::Semicolon);
                 chars.next();
+                tokens.push(Token::Semicolon);
             }
             _ => {
                 anyhow::bail!("Invalid character: {:?}", c);
